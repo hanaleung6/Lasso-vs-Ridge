@@ -1,0 +1,216 @@
+---
+title: "Lasso vs. Ridge"
+author: "Yongqi Liang"
+output:
+  html_document:
+    df_print: paged
+  pdf_document:
+    keep_tex: true
+    latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+library(tinytex)
+library(tidyverse)
+knitr::opts_chunk$set(echo = TRUE, eval = TRUE, include = TRUE, warning = FALSE, message = FALSE)
+```
+
+We discussed lasso and ridge regressions in the last lecture. In this lab, we use simulated datasets to fit these models and compare their performances to illustrate when one works better. 
+
+## Task 1: Generate simulated data sets
+
+To understand how a statistical learning method works, it is important to simulate a mock-up dataset where you know the underlying structure, so that you can use the dataset to examine and validate the behaviour of a model.
+
+#### Step 1.1: Generate the data sets
+
+Run the following code chunk. As a warm-up, what do you expect the output would be when you run `lm(Y~., data = dat_A)`?
+
+I would expect that all the variables will have a coefficient.
+
+```{r}
+# load libraries
+library(glmnet)
+library(MASS)
+library(tidyverse)
+# set up parameters
+set.seed(1) 
+n <- 90  
+p <- 90  
+lambdas <- 2^ seq(6, -4, length = 100)  # lambda values.
+# set up correlation matrix between Xs.
+corr <- 0.75
+cor.mat <- matrix(corr, nrow = p, ncol = p)
+diag(cor.mat) <- 1
+cor.mat[lower.tri(cor.mat)] <- t(cor.mat)[lower.tri(cor.mat)]
+# dat_A
+X1 <- mvrnorm(n, mu=rep(1, p), Sigma = cor.mat)
+colnames(X1) <- paste0('X', str_pad(1:p, nchar(p), 'left', '0'))
+n_betas <- 5
+betas <- as.vector(scale(sample(1:n_betas))) * 10
+related.ind <- sample(1:p, n_betas)
+y1 <- as.numeric(betas %*% t(X1[,related.ind]) + rnorm(n))
+dat_A <- cbind(data.frame(Y = y1), X1)
+
+# dat_B
+X2 <- mvrnorm(n, mu=rep(1, p), Sigma = cor.mat)
+colnames(X2) <- paste0('X', str_pad(1:p, nchar(p), 'left', '0'))
+all_betas <- sample(as.vector(scale(1:p))) * 0.1
+y2 <- as.numeric(all_betas %*% t(X2) + rnorm(n))
+dat_B <- cbind(data.frame(Y = y2), X2)
+
+lm(Y~., data = dat_A)
+```
+
+#### Step 1.2: Understand the code
+
+Examine the code chunk from 1.1 above, what is the similarity and difference between the two data sets, `dat_A` and `dat_B`?
+
+They both have 90 rows and 90 explanatory variables.
+
+#### Step 1.3: Split into `train` and `test`
+
+Split each one of the data sets into training (80%) and test (20%) sets. You should have `train_A`, `test_A`, `train_B`, and `test_B` by the end of this step. 
+```{r}
+#dat_A
+t_num <- nrow(dat_A) * 0.8
+my_sample<-sample(nrow(dat_A), t_num)
+train_A <- dat_A[my_sample,]
+test_A <- dat_A[-my_sample,]
+
+#dat_B
+t_num <- nrow(dat_B) * 0.8
+my_sample<-sample(nrow(dat_B), t_num)
+train_B <- dat_B[my_sample,]
+test_B <- dat_B[-my_sample,]
+```
+
+
+## Task 2: Fit lasso regression
+
+For each one of the data sets, do following:
+
+   1. fit a lasso model on the training set, with $\lambda$ chosen by cross-validation. 
+   
+   2. Calculate the test MSPE, and the number of non-zero coefficient estimates from the optimal model (i.e. the model with the optimal $\lambda$ chosen above by cross-validation).
+```{r}
+# A
+library(glmnet)
+X<-as.matrix(train_A[,-1])
+y<-train_A$Y
+set.seed(107) 
+fit <-glmnet(X,y)
+plot(fit)
+
+xval <-cv.glmnet(X,y)
+plot(xval)
+```
+
+The test MSPE for dat_A
+```{r}
+Xtest<-as.matrix(test_A[,-1])
+predy<-predict(fit, Xtest, s=xval$lambda.min)
+MSPE_A= sum((test_A$Y - predy)^2) / nrow(Xtest)
+MSPE_A
+```
+
+The number of non-zero coefficient estimates from the optimal model for dat_A
+```{r}
+coef(fit, s=xval$lambda.min)
+sum(coef(fit, s=xval$lambda.min) != 0)-1
+```
+
+```{r}
+# B
+library(glmnet)
+X<-as.matrix(train_B[,-1])
+y<-train_B$Y
+set.seed(107) 
+fit <-glmnet(X,y)
+plot(fit)
+
+xval <-cv.glmnet(X,y)
+plot(xval)
+```
+
+The test MSPE for dat_B
+```{r}
+Xtest<-as.matrix(test_B[,-1])
+predy<-predict(fit, Xtest, s=xval$lambda.min)
+MSPE_B= sum((test_B$Y - predy)^2) / nrow(Xtest)
+MSPE_B
+```
+
+The number of non-zero coefficient estimates from the optimal model for dat_B
+```{r}
+coef(fit, s=xval$lambda.min)
+sum(coef(fit, s=xval$lambda.min) != 0)-1
+```
+   
+## Task 3: Fit ridge regression
+
+For each one of the data sets, do following:
+
+   1. fit a ridge model on the training set, with $\lambda$ chosen by cross-validation. 
+   
+   2. Calculate the test MSPE, and the number of non-zero coefficient estimates from the optimal model.
+```{r}
+# A
+library(glmnet)
+X<-as.matrix(train_A[,-1])
+y<-train_A$Y
+set.seed(107) 
+fit <-glmnet(X,y, alpha = 0) # alpha = 0 --> ridge penalty
+plot(fit)
+
+xval <-cv.glmnet(X,y, alpha = 0) # alpha = 0 --> ridge penalty
+plot(xval)
+```
+
+The test MSPE for dat_A
+```{r}
+Xtest<-as.matrix(test_A[,-1])
+predy<-predict(fit, Xtest, s=xval$lambda.min)
+MSPE_A= sum((test_A$Y - predy)^2) / nrow(Xtest)
+MSPE_A
+```
+
+The number of non-zero coefficient estimates from the optimal model for dat_A
+```{r}
+coef(fit, s=xval$lambda.min)
+sum(coef(fit, s=xval$lambda.min) != 0)-1
+```
+
+```{r}
+# B
+library(glmnet)
+X<-as.matrix(train_B[,-1])
+y<-train_B$Y
+set.seed(107) 
+fit <-glmnet(X,y, alpha = 0) # alpha = 0 --> ridge penalty
+plot(fit)
+
+xval <-cv.glmnet(X,y, alpha = 0) # alpha = 0 --> ridge penalty
+plot(xval)
+```
+
+The test MSPE for dat_B
+```{r}
+Xtest<-as.matrix(test_B[,-1])
+predy<-predict(fit, Xtest, s=xval$lambda.min)
+MSPE_B= sum((test_B$Y - predy)^2) / nrow(Xtest)
+MSPE_B
+```
+
+The number of non-zero coefficient estimates from the optimal model for dat_B
+```{r}
+coef(fit, s=xval$lambda.min)
+sum(coef(fit, s=xval$lambda.min) != 0)-1
+```  
+
+## Task 4: Compare and comment
+
+Compare all the results from above (that is, two models for each of the two data sets), and comment on their performance. 
+
+For both data sets, all the variables have coefficient when fitting the ridge model. While the lasso model for both data sets only have about 10 variables have coefficients. 
+
+### EOF
